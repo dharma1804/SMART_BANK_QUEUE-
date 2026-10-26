@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Bank Queue</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0D1424">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F7F5F0;
+    --surface:#FFFFFF;
+    --surface-2:#FDFCFA;
+    --ink:#1E2430;
+    --muted:#6B7280;
+    --primary:#1B3358;
+    --primary-light:#2A4A7A;
+    --accent:#C68F2E;
+    --accent-soft:#F6E9CC;
+    --success:#2E9E5B;
+    --success-soft:#E3F5EA;
+    --danger:#C0392B;
+    --danger-soft:#FBEAE7;
+    --border:#E4DFD3;
+  }
+  body.dark{
+    --bg:#070B14;
+    --surface:#121A2B;
+    --surface-2:#0C1220;
+    --ink:#F1F4F9;
+    --muted:#93A0B8;
+    --primary:#5B8DEF;
+    --primary-light:#7FA9FF;
+    --accent:#D4AF37;
+    --accent-soft:rgba(212,175,55,0.16);
+    --success:#3ECF8E;
+    --success-soft:rgba(62,207,142,0.14);
+    --danger:#FF6B6B;
+    --danger-soft:rgba(255,107,107,0.14);
+    --border:rgba(255,255,255,0.09);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    position:relative;
+    overflow-x:hidden;
+    transition:background .3s ease, color .3s ease;
+  }
+  body.dark{
+    background:
+      radial-gradient(circle at 15% 0%, rgba(91,141,239,0.10), transparent 45%),
+      radial-gradient(circle at 90% 10%, rgba(212,175,55,0.08), transparent 45%),
+      var(--bg);
+  }
+  body:not(.dark){
+    background:
+      radial-gradient(circle at 8% 8%, rgba(198,143,46,0.08), transparent 32%),
+      radial-gradient(circle at 92% 18%, rgba(27,51,88,0.06), transparent 38%),
+      var(--bg);
+  }
+  /* ambient animated glow blobs — only shown in dark mode, gives a soft "alive"
+     motion behind the app, like a subtle looping video, without an actual video file */
+  .bg-blobs{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none;opacity:0;transition:opacity .4s ease;}
+  body.dark .bg-blobs{opacity:1;}
+  .bg-blobs span{position:absolute;border-radius:50%;filter:blur(70px);opacity:.4;}
+  .bg-blobs span:nth-child(1){width:440px;height:440px;top:-120px;left:-100px;background:radial-gradient(circle,rgba(212,175,55,0.5),transparent 70%);animation:blobFloat1 18s ease-in-out infinite;}
+  .bg-blobs span:nth-child(2){width:400px;height:400px;top:20%;right:-140px;background:radial-gradient(circle,rgba(91,141,239,0.45),transparent 70%);animation:blobFloat2 22s ease-in-out infinite;}
+  .bg-blobs span:nth-child(3){width:340px;height:340px;bottom:-100px;left:30%;background:radial-gradient(circle,rgba(62,207,142,0.28),transparent 70%);animation:blobFloat3 26s ease-in-out infinite;}
+  @keyframes blobFloat1{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(60px,80px) scale(1.15);}}
+  @keyframes blobFloat2{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-70px,60px) scale(1.1);}}
+  @keyframes blobFloat3{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(50px,-40px) scale(1.2);}}
+  ::selection{background:var(--accent-soft);}
+  h1,h2,h3,.display{font-family:'Sora',sans-serif;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  .app{max-width:920px;margin:0 auto;padding:28px 18px 60px;animation:fadeUp .5s ease both;}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+  @keyframes tokenPop{0%{opacity:0;transform:scale(.85);}60%{transform:scale(1.04);}100%{opacity:1;transform:scale(1);}}
+
+  /* customer intro animation, inspired by the reference reel */
+  .runner-wrap{text-align:center;margin-bottom:2px;height:56px;}
+  .runner{display:inline-block;font-size:42px;animation:runIn .65s cubic-bezier(.22,1,.36,1) both;}
+  @keyframes runIn{0%{transform:translateX(-130px) scale(.6) rotate(-10deg);opacity:0;}70%{opacity:1;}100%{transform:translateX(0) scale(1) rotate(0);opacity:1;}}
+  .form-panel{animation:popUp .5s cubic-bezier(.22,1,.36,1) both;animation-delay:.08s;opacity:0;}
+  @keyframes popUp{from{transform:translateY(26px) scale(.96);opacity:0;}to{transform:translateY(0) scale(1);opacity:1;}}
+  .field-anim{opacity:0;animation:fieldFade .5s ease both;}
+  @keyframes fieldFade{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+
+  /* ===== Step 1: navy-gold stage with walking character pushing in the fields ===== */
+  .reel-stage-wrap{
+    background:linear-gradient(165deg,#1B2740,#0D1424);
+    border:1px solid rgba(212,175,55,0.25);
+    border-radius:26px;
+    padding:26px 20px 30px;
+    position:relative;
+    overflow:hidden;
+    box-shadow:0 16px 34px rgba(0,0,0,0.45);
+    animation:fadeUp .4s ease both;
+  }
+  .reel-stage-wrap::before{
+    content:'';position:absolute;inset:0;
+    background:radial-gradient(circle at 12% 15%, rgba(212,175,55,0.14), transparent 40%),
+               radial-gradient(circle at 88% 85%, rgba(91,141,239,0.12), transparent 45%);
+    pointer-events:none;
+  }
+  .reel-title{text-align:center;color:#F1F4F9;font-size:16px;font-weight:800;margin:0 0 4px;font-family:'Sora',sans-serif;position:relative;}
+  .reel-sub{text-align:center;color:rgba(241,244,249,0.7);font-size:11px;margin:0 0 22px;position:relative;}
+  .reel-stage{display:flex;align-items:center;gap:12px;position:relative;min-height:96px;}
+  .reel-char{
+    font-size:54px;flex-shrink:0;line-height:1;
+    animation:walkBounce .8s ease-in-out infinite;
+    filter:drop-shadow(0 10px 8px rgba(0,0,0,0.4));
+  }
+  @keyframes walkBounce{
+    0%,100%{transform:translateY(0) rotate(-5deg);}
+    50%{transform:translateY(-9px) rotate(5deg);}
+  }
+  .reel-fields{display:flex;flex-direction:column;gap:10px;flex:1;min-width:0;}
+  .reel-pill{
+    background:var(--surface);border:1px solid var(--border);border-radius:30px;padding:12px 16px;
+    display:flex;align-items:center;gap:9px;
+    box-shadow:0 10px 20px rgba(0,0,0,0.3);
+    opacity:0;animation:slideInField .5s cubic-bezier(.22,1,.36,1) both;
+  }
+  .reel-pill.f-name{animation-delay:.35s;}
+  .reel-pill.f-phone{animation-delay:.6s;}
+  @keyframes slideInField{from{transform:translateX(70px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+  .reel-pill .pill-icon{font-size:14px;flex-shrink:0;}
+  .reel-pill input{
+    border:none;outline:none;background:transparent;flex:1;min-width:0;
+    font-family:'Inter',sans-serif;font-size:13.5px;color:var(--ink);
+  }
+  .reel-next-wrap{margin-top:16px;opacity:0;animation:slideInField .5s cubic-bezier(.22,1,.36,1) both;animation-delay:.95s;}
+  .pill-btn{
+    width:100%;border:1px solid rgba(212,175,55,0.4);border-radius:30px;
+    background:linear-gradient(145deg,var(--accent),#a8842a);color:#0D1424;
+    padding:15px;font-family:'Sora',sans-serif;font-weight:700;font-size:14px;
+    letter-spacing:.04em;cursor:pointer;box-shadow:0 12px 24px rgba(212,175,55,0.25);
+    transition:transform .12s ease;
+  }
+  .pill-btn:active{transform:scale(.98);}
+  .reel-dots{display:flex;gap:6px;justify-content:center;margin-bottom:10px;}
+  .reel-dots .dot{width:22px;height:5px;border-radius:3px;background:rgba(255,255,255,0.12);}
+  .reel-dots .dot.active{background:var(--accent);}
+  .reel-dots .dot.done{background:var(--accent);opacity:.5;}
+
+  /* top bar */
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:16px;border-bottom:1px solid var(--border);}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-mark{width:40px;height:40px;border-radius:10px;background:linear-gradient(145deg,var(--primary),var(--primary-light));display:flex;align-items:center;justify-content:center;color:var(--accent);font-weight:800;font-family:'Sora',sans-serif;font-size:19px;box-shadow:0 6px 14px rgba(91,141,239,0.3);}
+  .brand-name{font-family:'Sora',sans-serif;font-weight:700;font-size:17px;color:var(--ink);letter-spacing:-.01em;}
+  .brand-sub{font-size:11px;color:var(--muted);margin-top:-2px;}
+  .home-btn{background:none;border:1px solid var(--border);color:var(--muted);font-size:13px;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
+  .home-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(212,175,55,0.08);}
+
+  /* role select */
+  .hero{text-align:center;margin:30px 0 40px;}
+  .hero .eyebrow{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:20px;margin-bottom:14px;animation:pulseGlow 2.4s ease-in-out infinite;}
+  @keyframes pulseGlow{0%,100%{box-shadow:0 0 0 0 rgba(212,175,55,0.3);}50%{box-shadow:0 0 0 6px rgba(212,175,55,0);}}
+  .hero h1{font-size:34px;font-weight:800;margin:0 0 10px;letter-spacing:-.02em;line-height:1.15;
+    background:linear-gradient(100deg,var(--primary-light) 20%,var(--accent) 50%,var(--primary-light) 80%);
+    background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:shimmerText 5s linear infinite;}
+  @keyframes shimmerText{0%{background-position:0% center;}100%{background-position:200% center;}}
+  .hero p{color:var(--muted);font-size:15px;max-width:480px;margin:0 auto;line-height:1.6;}
+  .role-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:32px;}
+  @media(max-width:560px){.role-grid{grid-template-columns:1fr;}}
+  .role-card{background:rgba(255,255,255,0.035);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--border);border-radius:18px;padding:28px 22px;text-align:left;cursor:pointer;transition:transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s ease, border-color .22s ease;position:relative;overflow:hidden;}
+  .role-card::after{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(212,175,55,0.08),transparent 60%);opacity:0;transition:opacity .18s;}
+  .role-card:hover{transform:translateY(-6px) scale(1.015);box-shadow:0 20px 38px rgba(0,0,0,0.5);border-color:var(--accent);}
+  .role-card:hover::after{opacity:1;}
+  .role-icon{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:14px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);transition:transform .25s ease;}
+  .role-card:hover .role-icon{transform:scale(1.1) rotate(-4deg);}
+  .role-card.customer .role-icon{background:linear-gradient(145deg,var(--accent-soft),var(--surface-2));}
+  .role-card.admin .role-icon{background:linear-gradient(145deg,rgba(91,141,239,0.18),var(--surface-2));}
+  .role-card h3{margin:0 0 6px;font-size:17px;color:var(--ink);}
+  .role-card p{margin:0;font-size:13px;color:var(--muted);line-height:1.55;}
+  .role-card .go{margin-top:14px;font-size:12.5px;font-weight:600;color:var(--accent);transition:transform .15s;}
+  .role-card:hover .go{transform:translateX(3px);}
+
+  /* card / panel */
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:26px;box-shadow:0 1px 2px rgba(0,0,0,0.2);}
+  .panel + .panel{margin-top:16px;}
+  label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin:14px 0 6px;letter-spacing:.01em;}
+  label:first-child{margin-top:0;}
+  input[type=text],input[type=tel],select{
+    width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:9px;
+    font-family:'Inter',sans-serif;font-size:14px;background:var(--surface-2);color:var(--ink);
+    transition:border-color .15s, box-shadow .15s, background .15s;
+  }
+  input:focus,select:focus{outline:none;border-color:var(--accent);background:var(--surface-2);box-shadow:0 0 0 3px rgba(212,175,55,0.15);}
+  .service-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px;}
+  @media(max-width:560px){.service-grid{grid-template-columns:1fr;}}
+  .service-opt{border:1px solid var(--border);border-radius:10px;padding:12px 12px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:8px;background:var(--surface-2);color:var(--ink);transition:all .15s;}
+  .service-opt:hover{border-color:var(--accent);}
+  .service-opt.selected{border-color:var(--accent);background:var(--accent-soft);font-weight:600;box-shadow:0 3px 10px rgba(212,175,55,0.2);}
+  .service-opt .est{margin-left:auto;font-size:11px;color:var(--muted);}
+
+  .btn{
+    appearance:none;border:none;border-radius:10px;padding:13px 20px;font-family:'Inter',sans-serif;
+    font-weight:600;font-size:14.5px;cursor:pointer;width:100%;margin-top:20px;
+    transition:transform .12s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn-primary{background:linear-gradient(145deg,var(--accent),#a8842a);color:#0D1424;box-shadow:0 8px 18px rgba(212,175,55,0.25);}
+  .btn-primary:hover{box-shadow:0 10px 24px rgba(212,175,55,0.35);}
+  .btn-primary:disabled{background:#2A3142;color:var(--muted);cursor:not-allowed;box-shadow:none;}
+  .btn-danger{background:var(--danger-soft);color:var(--danger);}
+  .btn-danger:hover{background:rgba(255,107,107,0.24);}
+  .btn-success{background:var(--success-soft);color:var(--success);}
+  .btn-success:hover{background:rgba(62,207,142,0.24);}
+  .btn-outline{background:none;border:1px solid var(--border);color:var(--muted);}
+  .btn-outline:hover{border-color:var(--accent);color:var(--accent);}
+  .btn-sm{width:auto;padding:8px 14px;font-size:12.5px;margin:0;}
+  .error-text{color:var(--danger);font-size:12.5px;margin-top:8px;}
+
+  /* ticket */
+  .ticket{background:var(--surface);border:1px solid var(--border);border-radius:18px;overflow:visible;position:relative;box-shadow:0 20px 44px rgba(0,0,0,0.5);animation:tokenPop .45s ease both;}
+  .ticket-strip{height:6px;border-radius:18px 18px 0 0;background:linear-gradient(90deg,var(--accent),var(--primary));}
+  .ticket-top{padding:24px 26px 18px;text-align:center;}
+  .ticket-top .label{font-size:12px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase;font-weight:600;}
+  .ticket-top .tokenno{font-size:58px;font-weight:700;background:linear-gradient(160deg,var(--accent),var(--primary-light));-webkit-background-clip:text;background-clip:text;color:transparent;margin:4px 0;letter-spacing:.02em;}
+  .ticket-top .service-name{font-size:15px;font-weight:600;color:var(--ink);}
+  .perf{position:relative;border-top:2px dashed var(--border);margin:0 0;}
+  .perf::before,.perf::after{content:'';position:absolute;top:-11px;width:22px;height:22px;border-radius:50%;background:var(--bg);}
+  .perf::before{left:-11px;}
+  .perf::after{right:-11px;}
+  .ticket-bottom{padding:18px 26px 24px;}
+  .stat-row{display:flex;justify-content:space-between;padding:9px 0;font-size:13.5px;border-bottom:1px solid var(--border);}
+  .stat-row:last-child{border-bottom:none;}
+  .stat-row .k{color:var(--muted);}
+  .stat-row .v{font-weight:600;color:var(--ink);}
+  .status-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
+  .status-waiting{background:var(--accent-soft);color:#E8C766;}
+  .status-serving{background:var(--success-soft);color:var(--success);}
+  .status-completed{background:rgba(255,255,255,0.08);color:var(--muted);}
+  .status-cancelled{background:var(--danger-soft);color:var(--danger);}
+
+  .alert-banner{background:var(--success-soft);border:1px solid var(--success);color:#8FF0C4;border-radius:12px;padding:12px 16px;font-size:13.5px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:10px;}
+
+  .lookup-row{display:flex;gap:8px;}
+  .lookup-row input{flex:1;}
+
+  /* admin table */
+  .admin-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
+  .stat-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
+  @media(max-width:640px){.stat-cards{grid-template-columns:1fr 1fr;}}
+  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;transition:transform .15s, box-shadow .15s;}
+  .stat-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,0.35);border-color:var(--accent);}
+  .stat-card .num{font-size:23px;font-weight:700;color:var(--accent);font-family:'Sora',sans-serif;letter-spacing:-.01em;}
+  .stat-card .lbl{font-size:11.5px;color:var(--muted);margin-top:2px;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;padding:8px 10px;border-bottom:2px solid var(--border);}
+  td{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:middle;color:var(--ink);}
+  tr:last-child td{border-bottom:none;}
+  .row-actions{display:flex;gap:6px;flex-wrap:wrap;}
+  .token-cell{font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--accent);}
+
+  .empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:13.5px;}
+  .lock{max-width:340px;margin:60px auto 0;text-align:center;}
+  .lock .role-icon{margin:0 auto 14px;}
+  .footnote{text-align:center;color:var(--muted);font-size:11.5px;margin-top:26px;}
+</style>
+</head>
+<body>
+<div class="bg-blobs"><span></span><span></span><span></span></div>
+<div id="root" class="app"></div>
+
+<script>
+const SERVICES = [
+  { id:'deposit', name:'Cash Deposit', avg:4, icon:'💰' },
+  { id:'withdrawal', name:'Cash Withdrawal', avg:4, icon:'💵' },
+  { id:'account_opening', name:'Account Opening', avg:15, icon:'📝' },
+  { id:'mobile_update', name:'Mobile Number Update', avg:6, icon:'📱' },
+  { id:'address_change', name:'Address Change', avg:6, icon:'🏠' },
+  { id:'passbook_update', name:'Passbook Update', avg:5, icon:'📘' },
+];
+const ADMIN_USERS = [
+  { name:'Dharma', passcode:'9363' },
+  // add more staff here, e.g. { name:'Staff2', passcode:'1234' },
+];
+const TOKENS_KEY = 'bank_queue_tokens_v1';
+const COUNTER_KEY = 'bank_queue_counter_v1';
+const BUSINESS_START_HOUR = 9;  // 9 AM
+const BUSINESS_END_HOUR = 17;   // 5 PM (tokens can't be generated after this)
+const DATA_RETENTION_HOURS = 24; // completed/cancelled tokens older than this are auto-cleared
+
+function isWithinBusinessHours(){
+  const h = new Date().getHours();
+  return h >= BUSINESS_START_HOUR && h < BUSINESS_END_HOUR;
+}
+
+// ---- browser notifications (free alternative to SMS — works while the tab is open,
+// even in the background, on the device the customer is using) ----
+const notifiedFlags = {}; // e.g. { 'tok_123_soon': true } — avoids repeating the same alert
+function requestNotificationPermission(){
+  if('Notification' in window && Notification.permission==='default'){
+    Notification.requestPermission();
+  }
+}
+function maybeNotify(tokenId, kind, message){
+  const flagKey = tokenId+'_'+kind;
+  if(notifiedFlags[flagKey]) return;
+  notifiedFlags[flagKey] = true;
+  if('Notification' in window && Notification.permission==='granted'){
+    new Notification('Smart Bank Queue', { body: message, icon: '' });
+  }
+}
+
+// priority tokens (senior citizen / disability) are served before regular tokens,
+// but within the same priority tier, earliest token first
+function queueSort(a, b){
+  if(!!a.priority !== !!b.priority) return a.priority ? -1 : 1;
+  return a.createdAt - b.createdAt;
+}
+
+let state = {
+  view: 'home',        // home | customer_form | customer_ticket | admin_gate | admin_dashboard
+  customerStep: 'details', // details | service
+  tokens: [],
+  myToken: null,        // token object customer is currently tracking
+  form: { name:'', phone:'', service:'', priority:false },
+  lookupPhone: '',
+  lookupError: '',
+  adminPass: '',
+  adminError: '',
+  adminName: '',
+  loading: true,
+  darkMode: false,
+};
+
+function render(){
+  const root = document.getElementById('root');
+  root.innerHTML = '';
+  root.appendChild(Topbar());
+  if(state.view==='home') root.appendChild(HomeView());
+  else if(state.view==='customer_form') root.appendChild(CustomerFormView());
+  else if(state.view==='customer_ticket') root.appendChild(CustomerTicketView());
+  else if(state.view==='admin_gate') root.appendChild(AdminGateView());
+  else if(state.view==='admin_dashboard') root.appendChild(AdminDashboardView());
+}
+
+function el(tag, attrs, children){
+  const e = document.createElement(tag);
+  if(attrs) for(const k in attrs){
+    if(k==='class') e.className = attrs[k];
+    else if(k==='html') e.innerHTML = attrs[k];
+    else if(k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]);
+    else e.setAttribute(k, attrs[k]);
+  }
+  (children||[]).forEach(c=>{ if(c) e.appendChild(typeof c==='string'?document.createTextNode(c):c); });
+  return e;
+}
+
+function Topbar(){
+  const bar = el('div',{class:'topbar'});
+  const brand = el('div',{class:'brand'},[
+    el('div',{class:'brand-mark'},['₹']),
+    el('div',{},[
+      el('div',{class:'brand-name'},['Smart Bank Queue']),
+      el('div',{class:'brand-sub'},['AI-based token & waiting time system'])
+    ])
+  ]);
+  bar.appendChild(brand);
+  const rightGroup = el('div',{style:'display:flex;align-items:center;gap:8px;'});
+  rightGroup.appendChild(darkModeToggle());
+  if(state.view!=='home'){
+    rightGroup.appendChild(el('button',{class:'home-btn', onclick:()=>{ state.view='home'; state.myToken=null; render(); }},['← Home']));
+  }
+  bar.appendChild(rightGroup);
+  return bar;
+}
+
+function darkModeToggle(){
+  const btn = el('button',{class:'home-btn', title:'Toggle dark mode'},[state.darkMode ? '☀️ Light' : '🌙 Dark']);
+  btn.addEventListener('click', ()=>{
+    state.darkMode = !state.darkMode;
+    document.body.classList.toggle('dark', state.darkMode);
+    try{ localStorage.setItem('bank_queue_dark_mode', state.darkMode ? '1' : '0'); }catch(e){}
+    render();
+  });
+  return btn;
+}
+
+function HomeView(){
+  const wrap = el('div',{});
+  wrap.appendChild(el('div',{class:'hero'},[
+    el('div',{class:'eyebrow'},['AI-POWERED QUEUEING']),
+    el('h1',{},['Skip the wait. Know your time.']),
+    el('p',{},['Get a token, see your predicted turn, and reach the bank exactly when you need to — not a minute earlier.'])
+  ]));
+  const grid = el('div',{class:'role-grid'});
+  const custCard = el('div',{class:'role-card customer', onclick:()=>{ state.view='customer_form'; state.customerStep='details'; state.form={name:'',phone:'',service:''}; render(); }},[
+    el('div',{class:'role-icon'},['🎫']),
+    el('h3',{},['I\'m a Customer']),
+    el('p',{},['Enter your details, pick a service, and get your token with an AI-predicted arrival time.']),
+    el('div',{class:'go'},['Get my token →'])
+  ]);
+  const adminCard = el('div',{class:'role-card admin', onclick:()=>{ state.view='admin_gate'; state.adminPass=''; state.adminError=''; render(); }},[
+    el('div',{class:'role-icon'},['🛠️']),
+    el('h3',{},['I\'m Admin']),
+    el('p',{},['View the live queue, call the next token, mark service complete, or cancel a no-show.']),
+    el('div',{class:'go'},['Open dashboard →'])
+  ]);
+  grid.appendChild(custCard);
+  grid.appendChild(adminCard);
+  wrap.appendChild(grid);
+  wrap.appendChild(el('div',{class:'footnote'},['Demo data is stored live for everyone using this app — try opening it in two tabs, one as Customer and one as Admin.']));
+  return wrap;
+}
+
+function CustomerFormView(){
+  if(state.customerStep==='service') return ServiceStep();
+  return DetailsStep();
+}
+
+function DetailsStep(){
+  const container = el('div',{});
+
+  if(!isWithinBusinessHours()){
+    container.appendChild(el('div',{class:'alert-banner', style:'background:var(--danger-soft);border-color:var(--danger);color:var(--danger);'},
+      ['⏰ Tokens can only be generated between 9:00 AM and 5:00 PM. You can still fill this in, but submitting will be blocked until working hours.']));
+  }
+
+  // ===== green stage: character + fields sliding in beside it, like the reference reel =====
+  const stageWrap = el('div',{class:'reel-stage-wrap'});
+  stageWrap.appendChild(el('div',{class:'reel-title'},['Register Now']));
+  stageWrap.appendChild(el('div',{class:'reel-sub'},['Fill this in to join the queue at our bank branch']));
+
+  const stage = el('div',{class:'reel-stage'});
+  stage.appendChild(el('div',{class:'reel-char'},['🏃']));
+
+  const fields = el('div',{class:'reel-fields'});
+
+  const nameField = el('div',{class:'reel-pill f-name'});
+  nameField.appendChild(el('span',{class:'pill-icon'},['👤']));
+  const nameInput = el('input',{type:'text', placeholder:'First Name', value: state.form.name});
+  nameInput.addEventListener('input', e=>{ state.form.name = e.target.value; });
+  nameField.appendChild(nameInput);
+  fields.appendChild(nameField);
+
+  const phoneField = el('div',{class:'reel-pill f-phone'});
+  phoneField.appendChild(el('span',{class:'pill-icon'},['📞']));
+  const phoneInput = el('input',{type:'tel', placeholder:'Phone Number', value: state.form.phone});
+  phoneInput.addEventListener('input', e=>{ state.form.phone = e.target.value; });
+  phoneField.appendChild(phoneInput);
+  fields.appendChild(phoneField);
+
+  stage.appendChild(fields);
+  stageWrap.appendChild(stage);
+
+  const nextWrap = el('div',{class:'reel-next-wrap'});
+  const nextBtn = el('button',{class:'pill-btn'},['NEXT  →']);
+  nextBtn.addEventListener('click', handleDetailsContinue);
+  nextWrap.appendChild(nextBtn);
+  stageWrap.appendChild(nextWrap);
+
+  container.appendChild(stageWrap);
+
+  if(state.formError) container.appendChild(el('div',{class:'error-text', style:'text-align:center;margin-top:10px;'},[state.formError]));
+
+  // lookup existing token
+  const lookupPanel = el('div',{class:'panel field-anim', style:'animation-delay:.9s;margin-top:16px;'});
+  lookupPanel.appendChild(el('h3',{style:'margin-top:0;font-size:15px;color:var(--primary);'},['Already have a token?']));
+  const row = el('div',{class:'lookup-row'});
+  const lookupInput = el('input',{type:'tel', placeholder:'Enter your phone number'});
+  lookupInput.addEventListener('input', e=>{ state.lookupPhone = e.target.value; });
+  const lookupBtn = el('button',{class:'btn btn-outline btn-sm'},['Find my token']);
+  lookupBtn.addEventListener('click', handleLookup);
+  row.appendChild(lookupInput);
+  row.appendChild(lookupBtn);
+  lookupPanel.appendChild(row);
+  if(state.lookupError) lookupPanel.appendChild(el('div',{class:'error-text'},[state.lookupError]));
+  container.appendChild(lookupPanel);
+
+  return container;
+}
+
+function handleDetailsContinue(){
+  state.formError='';
+  const { name, phone } = state.form;
+  if(!name.trim()){ state.formError='Please enter your name.'; render(); return; }
+  if(!/^[0-9]{10}$/.test(phone.trim())){ state.formError='Please enter a valid 10-digit phone number.'; render(); return; }
+  state.customerStep = 'service';
+  render();
+}
+
+function ServiceStep(){
+  const container = el('div',{});
+
+  const backRow = el('div',{class:'field-anim', style:'animation-delay:.05s;margin-bottom:10px;'});
+  const backBtn = el('button',{class:'home-btn'},['← Back']);
+  backBtn.addEventListener('click', ()=>{ state.customerStep='details'; state.formError=''; render(); });
+  backRow.appendChild(backBtn);
+  container.appendChild(backRow);
+
+  const wrap = el('div',{class:'panel form-panel'});
+  wrap.appendChild(el('div',{class:'field-anim', style:'animation-delay:.1s;'},[
+    el('div',{class:'reel-dots', style:'margin-bottom:10px;'},[
+      el('span',{class:'dot done'}), el('span',{class:'dot active'})
+    ]),
+    el('h2',{style:'margin-top:0;font-size:19px;color:var(--primary);'},['Hi '+state.form.name.split(' ')[0]+', pick your service']),
+    el('p',{style:'margin:0 0 6px;color:var(--muted);font-size:12.5px;'},['Step 2 of 2 — this generates your token'])
+  ]));
+
+  const serviceGroup = el('div',{class:'field-anim', style:'animation-delay:.2s;'});
+  const grid = el('div',{class:'service-grid'});
+  SERVICES.forEach(s=>{
+    const opt = el('div',{class:'service-opt'+(state.form.service===s.id?' selected':'')},[
+      document.createTextNode(s.icon+' '+s.name),
+      el('span',{class:'est'},['~'+s.avg+'m'])
+    ]);
+    opt.addEventListener('click', ()=>{ state.form.service = s.id; render(); });
+    grid.appendChild(opt);
+  });
+  serviceGroup.appendChild(grid);
+  wrap.appendChild(serviceGroup);
+
+  const priorityRow = el('div',{class:'field-anim', style:'animation-delay:.25s;margin:10px 0;display:flex;align-items:center;gap:8px;'});
+  const priorityCheckbox = el('input',{type:'checkbox', id:'priorityCb'});
+  priorityCheckbox.checked = !!state.form.priority;
+  priorityCheckbox.addEventListener('change', e=>{ state.form.priority = e.target.checked; });
+  priorityRow.appendChild(priorityCheckbox);
+  const priorityLabel = el('label',{for:'priorityCb', style:'font-size:13px;color:var(--muted);cursor:pointer;'},['🧑‍🦯 Senior citizen / person with disability (priority queue)']);
+  priorityRow.appendChild(priorityLabel);
+  wrap.appendChild(priorityRow);
+
+  if(state.formError) wrap.appendChild(el('div',{class:'error-text'},[state.formError]));
+
+  const btnGroup = el('div',{class:'field-anim', style:'animation-delay:.3s;'});
+  const submitBtn = el('button',{class:'btn btn-primary'},['Generate my token']);
+  submitBtn.addEventListener('click', handleGenerateToken);
+  btnGroup.appendChild(submitBtn);
+  wrap.appendChild(btnGroup);
+
+  container.appendChild(wrap);
+  return container;
+}
+
+function handleLookup(){
+  state.lookupError='';
+  const t = state.tokens.filter(t=>t.phone===state.lookupPhone.trim() && (t.status==='waiting'||t.status==='serving'||t.status==='completed')).sort((a,b)=>b.createdAt-a.createdAt)[0];
+  if(!t){ state.lookupError = 'No active token found for this number.'; render(); return; }
+  state.myToken = t;
+  state.view = 'customer_ticket';
+  render();
+}
+
+async function handleGenerateToken(){
+  state.formError='';
+  if(!isWithinBusinessHours()){
+    state.formError = 'Tokens can only be generated between 9:00 AM and 5:00 PM. Please come back during working hours.';
+    render(); return;
+  }
+  const { name, phone, service } = state.form;
+  if(!name.trim()){ state.formError='Please enter your name.'; render(); return; }
+  if(!/^[0-9]{10}$/.test(phone.trim())){ state.formError='Please enter a valid 10-digit phone number.'; render(); return; }
+  if(!service){ state.formError='Please select a service.'; render(); return; }
+
+  const svc = SERVICES.find(s=>s.id===service);
+  const counter = await storageGet(COUNTER_KEY, {value:0});
+  const nextNo = counter.value + 1;
+  await storageSet(COUNTER_KEY, {value: nextNo});
+
+  const token = {
+    id: 'tok_'+Date.now()+'_'+Math.floor(Math.random()*1000),
+    tokenNo: nextNo,
+    name: name.trim(),
+    phone: phone.trim(),
+    serviceId: svc.id,
+    serviceName: svc.name,
+    avgTime: svc.avg,
+    priority: !!state.form.priority,
+    status: 'waiting',
+    createdAt: Date.now(),
+    feedbackRating: null,
+    feedbackComment: '',
+  };
+  const tokens = await storageGet(TOKENS_KEY, []);
+  tokens.push(token);
+  await storageSet(TOKENS_KEY, tokens);
+
+  state.tokens = tokens;
+  state.myToken = token;
+  state.view = 'customer_ticket';
+  requestNotificationPermission();
+  render();
+}
+
+function computeQueueInfo(tokens, token){
+  const active = tokens.filter(t=>t.status==='waiting'||t.status==='serving').sort(queueSort);
+  const idx = active.findIndex(t=>t.id===token.id);
+  const position = idx===-1 ? null : idx+1;
+  let waitMinutes = 0;
+  for(let i=0;i<idx;i++){ waitMinutes += active[i].avgTime; }
+  const etaDate = new Date(Date.now() + waitMinutes*60000);
+  return { position, waitMinutes, etaDate, aheadCount: idx };
+}
+
+function formatTime(d){
+  let h = d.getHours(); const m = d.getMinutes();
+  const ampm = h>=12?'PM':'AM';
+  h = h%12; if(h===0) h=12;
+  return h+':'+String(m).padStart(2,'0')+' '+ampm;
+}
+
+function CustomerTicketView(){
+  const container = el('div',{});
+  const live = state.tokens.find(t=>t.id===state.myToken.id) || state.myToken;
+  state.myToken = live;
+
+  if(live.status==='waiting'){
+    const info = computeQueueInfo(state.tokens, live);
+    if(info.waitMinutes<=5 && info.waitMinutes>=0){
+      container.appendChild(el('div',{class:'alert-banner'},['🔔 Your turn is coming up in about '+info.waitMinutes+' min — please head to the counter now.']));
+      maybeNotify(live.id, 'soon', 'Your turn is coming up in about '+info.waitMinutes+' min — please head to the counter.');
+    }
+  } else if(live.status==='serving'){
+    container.appendChild(el('div',{class:'alert-banner'},["✅ It's your turn now — please proceed to the counter."]));
+    maybeNotify(live.id, 'serving', "It's your turn now — please proceed to the counter.");
+  } else if(live.status==='cancelled'){
+    container.appendChild(el('div',{class:'alert-banner', style:'background:var(--danger-soft);border-color:var(--danger);color:var(--danger);'},['This token was cancelled by admin. Please generate a new token if you still need service.']));
+  } else if(live.status==='completed'){
+    container.appendChild(el('div',{class:'alert-banner'},['🎉 Your service is complete. Thank you!']));
+  }
+
+  const ticket = el('div',{class:'ticket'});
+  ticket.appendChild(el('div',{class:'ticket-strip'}));
+  const top = el('div',{class:'ticket-top'},[
+    el('div',{class:'label'},['Your Token']),
+    el('div',{class:'tokenno mono'},[String(live.tokenNo).padStart(2,'0')]),
+    el('div',{class:'service-name'},[SERVICES.find(s=>s.id===live.serviceId).icon+' '+live.serviceName]),
+  ]);
+  if(live.priority) top.appendChild(el('div',{style:'margin-top:6px;display:inline-block;background:rgba(212,175,55,0.18);color:#E8C766;font-size:11.5px;padding:3px 10px;border-radius:20px;font-weight:600;'},['🧑‍🦯 Priority']));
+  ticket.appendChild(top);
+  ticket.appendChild(el('div',{class:'perf'}));
+
+  // QR code — scanning it opens this app's status-check page for quick re-lookup
+  const qrWrap = el('div',{style:'display:flex;justify-content:center;padding:10px 0;'});
+  const qrImg = el('img',{
+    src:'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data='+encodeURIComponent(window.location.origin+window.location.pathname+'?lookup='+live.phone),
+    alt:'QR code', style:'width:110px;height:110px;border-radius:8px;border:1px solid var(--border);'
+  });
+  qrWrap.appendChild(qrImg);
+  ticket.appendChild(qrWrap);
+
+  const bottom = el('div',{class:'ticket-bottom'});
+  const statusPill = el('span',{class:'status-pill status-'+live.status},[live.status]);
+  bottom.appendChild(rowStat('Status', statusPill));
+  bottom.appendChild(rowStat('Name', live.name));
+  bottom.appendChild(rowStat('Phone', live.phone));
+
+  if(live.status==='waiting'){
+    const info = computeQueueInfo(state.tokens, live);
+    bottom.appendChild(rowStat('Position in queue', info.position ? '#'+info.position : '—'));
+    bottom.appendChild(rowStat('People ahead of you', String(info.aheadCount)));
+    bottom.appendChild(rowStat('AI predicted arrival', formatTime(info.etaDate)));
+  }
+  bottom.appendChild(rowStat('Token issued at', formatTime(new Date(live.createdAt))));
+  ticket.appendChild(bottom);
+  container.appendChild(ticket);
+
+  if(live.status==='completed'){
+    container.appendChild(FeedbackBlock(live));
+  }
+
+  const back = el('button',{class:'btn btn-outline'},['Get another token']);
+  back.addEventListener('click', ()=>{ state.view='customer_form'; state.customerStep='details'; state.form={name:'',phone:'',service:''}; render(); });
+  container.appendChild(back);
+
+  return container;
+}
+
+function FeedbackBlock(token){
+  const box = el('div',{class:'panel', style:'margin-top:14px;'});
+  if(token.feedbackRating){
+    box.appendChild(el('h3',{style:'margin:0 0 6px;color:var(--primary);font-size:15px;'},['Thanks for your feedback!']));
+    box.appendChild(el('div',{style:'font-size:20px;'},['⭐'.repeat(token.feedbackRating)]));
+    if(token.feedbackComment) box.appendChild(el('div',{style:'color:var(--muted);font-size:13px;margin-top:6px;'},[token.feedbackComment]));
+    return box;
+  }
+
+  box.appendChild(el('h3',{style:'margin:0 0 6px;color:var(--primary);font-size:15px;'},['How was your experience?']));
+  let selectedRating = 0;
+  const starsRow = el('div',{style:'display:flex;gap:6px;font-size:26px;cursor:pointer;margin:8px 0;'});
+  const starEls = [];
+  for(let i=1;i<=5;i++){
+    const s = el('span',{},['☆']);
+    s.addEventListener('click', ()=>{
+      selectedRating = i;
+      starEls.forEach((el2,idx)=>{ el2.textContent = (idx < selectedRating) ? '⭐' : '☆'; });
+    });
+    starEls.push(s);
+    starsRow.appendChild(s);
+  }
+  box.appendChild(starsRow);
+
+  const comment = el('textarea',{placeholder:'Any comments (optional)', rows:'3', style:'width:100%;box-sizing:border-box;border-radius:10px;border:1px solid var(--border);padding:8px;font-family:inherit;font-size:13px;'});
+  box.appendChild(comment);
+
+  const err = el('div',{class:'error-text', style:'display:none;'});
+  box.appendChild(err);
+
+  const submitBtn = el('button',{class:'btn btn-primary', style:'margin-top:8px;'},['Submit feedback']);
+  submitBtn.addEventListener('click', async ()=>{
+    if(selectedRating===0){ err.style.display='block'; err.textContent='Please select a star rating.'; return; }
+    await submitFeedback(token.id, selectedRating, comment.value.trim());
+  });
+  box.appendChild(submitBtn);
+
+  return box;
+}
+
+async function submitFeedback(tokenId, rating, comment){
+  const tokens = await storageGet(TOKENS_KEY, []);
+  const idx = tokens.findIndex(t=>t.id===tokenId);
+  if(idx>-1){
+    tokens[idx].feedbackRating = rating;
+    tokens[idx].feedbackComment = comment;
+  }
+  await storageSet(TOKENS_KEY, tokens);
+  state.tokens = tokens;
+  if(state.myToken && state.myToken.id===tokenId){
+    state.myToken = tokens[idx];
+  }
+  render();
+}
+
+function rowStat(k, v){
+  const row = el('div',{class:'stat-row'});
+  row.appendChild(el('span',{class:'k'},[k]));
+  const vEl = el('span',{class:'v'});
+  if(typeof v==='string') vEl.textContent = v; else vEl.appendChild(v);
+  row.appendChild(vEl);
+  return row;
+}
+
+function AdminGateView(){
+  const wrap = el('div',{class:'lock panel'});
+  wrap.appendChild(el('div',{class:'role-icon', style:'background:linear-gradient(145deg,rgba(212,175,55,0.2),var(--surface-2));'},['🔒']));
+  wrap.appendChild(el('h3',{style:'color:var(--primary);'},['Admin Login']));
+  const input = el('input',{type:'text', placeholder:'Enter passcode'});
+  input.addEventListener('input', e=>{ state.adminPass = e.target.value; });
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') handleAdminLogin(); });
+  wrap.appendChild(input);
+  if(state.adminError) wrap.appendChild(el('div',{class:'error-text'},[state.adminError]));
+  const btn = el('button',{class:'btn btn-primary'},['Enter dashboard']);
+  btn.addEventListener('click', handleAdminLogin);
+  wrap.appendChild(btn);
+  return wrap;
+}
+
+function handleAdminLogin(){
+  const match = ADMIN_USERS.find(u=>u.passcode === state.adminPass);
+  if(match){ state.adminName = match.name; state.view='admin_dashboard'; render(); }
+  else { state.adminError='Incorrect passcode.'; render(); }
+}
+
+function AdminDashboardView(){
+  const wrap = el('div',{});
+  const waiting = state.tokens.filter(t=>t.status==='waiting');
+  const serving = state.tokens.filter(t=>t.status==='serving');
+  const completed = state.tokens.filter(t=>t.status==='completed');
+
+  const welcomeRow = el('div',{style:'font-size:13px;color:var(--muted);margin-bottom:8px;'},['👋 Logged in as '+(state.adminName||'Admin')]);
+  wrap.appendChild(welcomeRow);
+
+  const cards = el('div',{class:'stat-cards'});
+  cards.appendChild(statCard(waiting.length,'Waiting'));
+  cards.appendChild(statCard(serving.length,'Being served'));
+  cards.appendChild(statCard(completed.length,'Completed today'));
+  cards.appendChild(statCard(waiting.reduce((a,t)=>a+t.avgTime,0)+' m','Total est. backlog'));
+  wrap.appendChild(cards);
+
+  const header = el('div',{class:'admin-header'});
+  header.appendChild(el('h2',{style:'margin:0;font-size:18px;color:var(--primary);'},['Live Queue']));
+  const resetBtn = el('button',{class:'btn btn-outline btn-sm'},['Reset all data']);
+  resetBtn.addEventListener('click', handleReset);
+  header.appendChild(resetBtn);
+  wrap.appendChild(header);
+
+  const active = state.tokens.filter(t=>t.status==='waiting'||t.status==='serving').sort(queueSort);
+
+  const panel = el('div',{class:'panel'});
+  if(active.length===0){
+    panel.appendChild(el('div',{class:'empty'},['No customers in queue right now.']));
+  } else {
+    const table = el('table');
+    const thead = el('thead',{},[el('tr',{},[
+      el('th',{},['Token']), el('th',{},['Name']), el('th',{},['Service']),
+      el('th',{},['Status']), el('th',{},['Est. time']), el('th',{},['Actions'])
+    ])]);
+    table.appendChild(thead);
+    const tbody = el('tbody');
+    active.forEach(t=>{
+      const info = computeQueueInfo(state.tokens, t);
+      const tr = el('tr');
+      if(t.priority) tr.style.background = 'rgba(212,175,55,0.07)';
+      const nameCell = el('td',{},[el('div',{},[t.priority?'🧑‍🦯 ':'', t.name]), el('div',{style:'color:var(--muted);font-size:11.5px;'},[t.phone])]);
+      tr.appendChild(el('td',{class:'token-cell'},[String(t.tokenNo).padStart(2,'0')]));
+      tr.appendChild(nameCell);
+      tr.appendChild(el('td',{},[SERVICES.find(s=>s.id===t.serviceId).icon+' '+t.serviceName]));
+      tr.appendChild(el('td',{},[el('span',{class:'status-pill status-'+t.status},[t.status])]));
+      tr.appendChild(el('td',{},[t.status==='waiting' ? formatTime(info.etaDate) : '—']));
+      const actions = el('td',{});
+      const actionsRow = el('div',{class:'row-actions'});
+      if(t.status==='waiting'){
+        const serveBtn = el('button',{class:'btn btn-success btn-sm'},['📞 Call']);
+        serveBtn.addEventListener('click', ()=>{
+          window.location.href = 'tel:'+t.phone;   // opens the phone dialer with the customer's number
+          updateTokenStatus(t.id,'serving');
+        });
+        actionsRow.appendChild(serveBtn);
+      }
+      if(t.status==='serving'){
+        const doneBtn = el('button',{class:'btn btn-success btn-sm'},['Complete']);
+        doneBtn.addEventListener('click', ()=>updateTokenStatus(t.id,'completed'));
+        actionsRow.appendChild(doneBtn);
+      }
+      const cancelBtn = el('button',{class:'btn btn-danger btn-sm'},['Cancel']);
+      cancelBtn.addEventListener('click', ()=>updateTokenStatus(t.id,'cancelled'));
+      actionsRow.appendChild(cancelBtn);
+      actions.appendChild(actionsRow);
+      tr.appendChild(actions);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    panel.appendChild(table);
+  }
+  wrap.appendChild(panel);
+
+  // ---- daily report: service breakdown + peak hours ----
+  const reportHeader = el('div',{class:'admin-header', style:'margin-top:20px;'});
+  reportHeader.appendChild(el('h2',{style:'margin:0;font-size:18px;color:var(--primary);'},['Daily Report']));
+  wrap.appendChild(reportHeader);
+  const reportPanel = el('div',{class:'panel'});
+  if(completed.length===0){
+    reportPanel.appendChild(el('div',{class:'empty'},['No completed services yet today.']));
+  } else {
+    // service-wise breakdown
+    const byService = {};
+    completed.forEach(t=>{ byService[t.serviceName] = (byService[t.serviceName]||0)+1; });
+    reportPanel.appendChild(el('div',{style:'font-weight:600;margin-bottom:6px;'},['Service-wise completed count']));
+    Object.entries(byService).forEach(([name,count])=>{
+      reportPanel.appendChild(el('div',{style:'display:flex;justify-content:space-between;padding:4px 0;font-size:13px;'},[
+        el('span',{},[name]), el('span',{style:'color:var(--muted);'},[String(count)])
+      ]));
+    });
+
+    // peak hours (based on when tokens were created)
+    const byHour = {};
+    state.tokens.forEach(t=>{
+      const h = new Date(t.createdAt).getHours();
+      byHour[h] = (byHour[h]||0)+1;
+    });
+    const maxCount = Math.max(1, ...Object.values(byHour));
+    reportPanel.appendChild(el('div',{style:'font-weight:600;margin:14px 0 6px;'},['Peak hours (tokens generated)']));
+    const chart = el('div',{style:'display:flex;align-items:flex-end;gap:4px;height:80px;'});
+    for(let h=BUSINESS_START_HOUR; h<BUSINESS_END_HOUR; h++){
+      const count = byHour[h]||0;
+      const barHeight = Math.max(4, Math.round((count/maxCount)*70));
+      const barWrap = el('div',{style:'display:flex;flex-direction:column;align-items:center;flex:1;'});
+      barWrap.appendChild(el('div',{style:'font-size:10px;color:var(--muted);margin-bottom:2px;'},[String(count)]));
+      barWrap.appendChild(el('div',{style:'width:100%;background:var(--primary);border-radius:3px 3px 0 0;height:'+barHeight+'px;'}));
+      barWrap.appendChild(el('div',{style:'font-size:9.5px;color:var(--muted);margin-top:3px;'},[h+'h']));
+      chart.appendChild(barWrap);
+    }
+    reportPanel.appendChild(chart);
+
+    // average actual serving time (createdAt to completed isn't tracked precisely, so show avg estimated time as proxy)
+    const avgEst = (completed.reduce((a,t)=>a+t.avgTime,0)/completed.length).toFixed(1);
+    reportPanel.appendChild(el('div',{style:'margin-top:14px;font-size:13px;color:var(--muted);'},['Average estimated service time: '+avgEst+' min']));
+  }
+  wrap.appendChild(reportPanel);
+
+  // ---- customer feedback section ----
+  const fbWithFeedback = completed.filter(t=>t.feedbackRating);
+  const fbHeader = el('div',{class:'admin-header', style:'margin-top:20px;'});
+  fbHeader.appendChild(el('h2',{style:'margin:0;font-size:18px;color:var(--primary);'},['Customer Feedback']));
+  wrap.appendChild(fbHeader);
+  const fbPanel = el('div',{class:'panel'});
+  if(fbWithFeedback.length===0){
+    fbPanel.appendChild(el('div',{class:'empty'},['No feedback submitted yet.']));
+  } else {
+    fbWithFeedback.sort((a,b)=>b.createdAt-a.createdAt).forEach(t=>{
+      const row = el('div',{style:'padding:10px 0;border-bottom:1px solid var(--border);'});
+      row.appendChild(el('div',{style:'font-weight:600;'},[t.name+' — '+'⭐'.repeat(t.feedbackRating)]));
+      if(t.feedbackComment) row.appendChild(el('div',{style:'color:var(--muted);font-size:13px;margin-top:2px;'},[t.feedbackComment]));
+      fbPanel.appendChild(row);
+    });
+  }
+  wrap.appendChild(fbPanel);
+
+  return wrap;
+}
+
+function statCard(num, lbl){
+  return el('div',{class:'stat-card'},[
+    el('div',{class:'num'},[String(num)]),
+    el('div',{class:'lbl'},[lbl])
+  ]);
+}
+
+async function updateTokenStatus(id, status){
+  const tokens = await storageGet(TOKENS_KEY, []);
+  const idx = tokens.findIndex(t=>t.id===id);
+  if(idx>-1){ tokens[idx].status = status; }
+  await storageSet(TOKENS_KEY, tokens);
+  state.tokens = tokens;
+  render();
+}
+
+async function handleReset(){
+  await storageSet(TOKENS_KEY, []);
+  await storageSet(COUNTER_KEY, {value:0});
+  state.tokens = [];
+  render();
+}
+
+// ---- storage helpers (Firebase Firestore — shared across every device/browser) ----
+const firebaseConfig = {
+  apiKey: "AIzaSyB_ti7V_VNfY1nbg7m4RPi1JfV3EYQ0IX0",
+  authDomain: "smart-bank-queue-a07b1.firebaseapp.com",
+  projectId: "smart-bank-queue-a07b1",
+  storageBucket: "smart-bank-queue-a07b1.firebasestorage.app",
+  messagingSenderId: "299450672390",
+  appId: "1:299450672390:web:131a24a691a5a70085aa87"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// We keep two documents in a "queue_app" collection: one holding the tokens array,
+// one holding the running counter — mirrors the old key/value shape so the rest
+// of the app code (storageGet/storageSet) doesn't need to change.
+const DOC_MAP = {
+  [TOKENS_KEY]: db.collection('queue_app').doc('tokens'),
+  [COUNTER_KEY]: db.collection('queue_app').doc('counter')
+};
+
+async function storageGet(key, fallback){
+  try{
+    const ref = DOC_MAP[key];
+    const snap = await ref.get();
+    if(!snap.exists) return fallback;
+    const data = snap.data();
+    return data && 'value' in data ? data.value : fallback;
+  }catch(e){
+    console.error('storageGet failed', key, e);
+    return fallback;
+  }
+}
+async function storageSet(key, value){
+  try{
+    const ref = DOC_MAP[key];
+    await ref.set({ value: value });
+  }catch(e){
+    console.error('storageSet failed', key, e);
+  }
+}
+
+(function init(){
+  // restore dark mode preference (defaults to light mode for first-time visitors)
+  try{
+    if(localStorage.getItem('bank_queue_dark_mode')==='1'){
+      state.darkMode = true;
+      document.body.classList.add('dark');
+    }
+  }catch(e){}
+
+  // Realtime listener: any customer/admin device writing to Firestore
+  // instantly pushes the update to every other open tab/device.
+  DOC_MAP[TOKENS_KEY].onSnapshot(snap=>{
+    const data = snap.exists ? snap.data() : null;
+    let tokens = (data && data.value) ? data.value : [];
+
+    // auto-clear completed/cancelled tokens older than DATA_RETENTION_HOURS
+    // (keeps the customer-facing lookup and admin report from growing forever)
+    const cutoff = Date.now() - DATA_RETENTION_HOURS*3600000;
+    const before = tokens.length;
+    tokens = tokens.filter(t=>{
+      if((t.status==='completed'||t.status==='cancelled') && t.createdAt < cutoff) return false;
+      return true;
+    });
+    if(tokens.length !== before){
+      storageSet(TOKENS_KEY, tokens); // fire-and-forget cleanup write
+    }
+
+    state.tokens = tokens;
+
+    // if this page was opened via a QR code (?lookup=phone), auto show that ticket
+    const params = new URLSearchParams(window.location.search);
+    const qrPhone = params.get('lookup');
+    if(qrPhone && state.view==='home'){
+      const t = state.tokens.filter(t=>t.phone===qrPhone && (t.status==='waiting'||t.status==='serving'||t.status==='completed')).sort((a,b)=>b.createdAt-a.createdAt)[0];
+      if(t){ state.myToken = t; state.view = 'customer_ticket'; }
+    }
+    render();
+  }, err=>console.error('tokens listener error', err));
+
+  // register service worker so the app is installable (needed for the Android APK build)
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(err=>console.error('SW registration failed', err));
+  }
+})();
+</script>
+</body>
+</html>
